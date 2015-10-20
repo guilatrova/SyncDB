@@ -1,0 +1,16 @@
+.progress .bar {
+    float: left;
+    width: 17em;
+}
+
+.ajax-progress-bar {
+    width:20em;
+}
+
+.ajax-progress .message {
+    padding-left: 5px;
+}
+
+#sync-db-submit {
+    display: block;
+}

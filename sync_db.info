@@ -1,0 +1,13 @@
+name = Sync DB
+description = A module that synchronizes tables from some other database.
+core = 7.x 
+package = Database
+
+files[] = engines/connection.inc
+files[] = engines/excps.inc
+files[] = engines/schema.inc
+files[] = engines/structure.inc
+files[] = engines/sync_database.inc
+files[] = engines/mysql.inc
+
+configure = admin/config/system/sync-db

@@ -1,0 +1,412 @@
+<?php
+
+/**
+ * Implements hook_permission()
+ */
+function sync_db_permission() {
+  return array(
+    'create sync db connection' => array(
+      'title' => t('Create Sync DB connections'),
+      'description' => t('Allows user to create connections for sync db module.'),
+    ),
+    'edit sync db connection' => array(
+      'title' => t('Edit Sync DB connections'),
+      'description' => t('Allows user to modify and edit a Sync DB connection\'s parameters ')
+    ),
+    'delete sync db connection' => array(
+      'title' => t('Delete Sync DB Connections'),
+      'description' => t('Allows user to delete any Sync DB connection and its data'),
+      'restrict access' => TRUE
+    ),
+    'view sync db connection' => array(
+      'title' => t('View Sync DB Connection parameters'),
+      'description' => t('Allows user to view any Sync DB connection and its data')      
+    ),
+    'administer sync db module' => array(
+      'title' => t('Administer Sync DB module'),
+      'description' => t("Allows user to change module's config, repair tables' "
+          . "structures and ask for synchronizations")
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu()
+ */
+function sync_db_menu() {
+  $items = array();
+
+  $items['sync-db/connection-setup/add'] = array(
+    'title' => 'Set up a new connection',
+    'description' => 'Create a new connection for Sync DB module',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sync_db_add_connection'),    
+    'access arguments' => array('create sync db connection'),
+    'file' => 'sync_db.pages.inc',
+  );
+
+    $items['sync-db/connection-setup/%sync_db_connection'] = array(      
+      'title callback' => 'sync_db_view_connection_title',
+      'title arguments' => array(2),
+      'page callback' => 'sync_db_view_connection_page',
+      'page arguments' => array(2),
+      'access arguments' => array('view sync db connection')
+    );
+
+        $items['sync-db/connection-setup/%sync_db_connection/view'] = array(
+          'type' => MENU_DEFAULT_LOCAL_TASK,
+          'title' => 'View',
+          'weight' => 1,
+        );
+
+                $items['sync-db/connection-setup/%sync_db_connection/view/basic'] = array(
+                  'type' => MENU_DEFAULT_LOCAL_TASK,
+                  'title' => 'Basic information',
+                );
+
+                $items["sync-db/connection-setup/%sync_db_connection/view/tables"] = array(
+                  'type' => MENU_LOCAL_TASK,
+                  'title' => 'Tables information',
+                  'page callback' => 'sync_db_view_connection_page',
+                  'page arguments' => array(2, 'tables'),
+                  'access arguments' => array('view sync db connection'),
+                );
+    
+        $items["sync-db/connection-setup/%sync_db_connection/edit"] = array(
+          'type' => MENU_LOCAL_TASK,
+          'title' => 'Edit',
+          'page callback' => 'sync_db_edit_connection_page',
+          'page arguments' => array(2),
+          'access arguments' => array('edit sync db connection'),
+          'file' => 'sync_db.pages.inc',
+          'weight' => 2,
+        );
+
+        $items["sync-db/connection-setup/%sync_db_connection/delete"] = array(
+          'type' => MENU_LOCAL_TASK,
+          'title' => 'Delete',
+          'page callback' => 'sync_db_delete_connection_page',
+          'page arguments' => array(2),
+          'access arguments' => array('delete sync db connection'),
+          'file' => 'sync_db.pages.inc',
+          'weight' => 3,
+        );
+
+        $items["sync-db/connection-setup/%sync_db_connection/repair"] = array(
+          'type' => MENU_LOCAL_TASK,
+          'title' => 'Repair',
+          'page callback' => 'sync_db_repair_connection_page',
+          'page arguments' => array(2),
+          'access arguments' => array('administer sync db module'),
+          'file' => 'sync_db.pages.inc',
+          'weight' => 4,
+        );
+
+        $items["sync-db/connection-setup/%sync_db_connection/test"] = array(
+          'type' => MENU_CALLBACK,
+          'title' => 'Test',
+          'page callback' => 'sync_db_test_connection_page',
+          'page arguments' => array(2),
+          'access arguments' => array('view sync db connection'),
+        );
+
+  $items['admin/config/system/sync-db'] = array(
+    'title' => 'Sync Database',
+    'description' => 'Configure synchronization settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sync_db_admin_page'),
+    'access arguments' => array('administer sync db module'),
+    'file' => 'sync_db.admin.inc'
+  );
+  
+  $items['sync-db/synchronization/%sync_db_connection'] = array(
+    'title' => 'Synchronization',
+    'page callback' => 'sync_db_synchronize_connection_page',
+    'page arguments' => array(2),
+    'access arguments' => array('administer sync db module'),
+    'file' => 'sync_db.admin.inc'
+  );
+  
+  $items['sync-db/synchronization/progress/%'] = array(
+    'type' => MENU_CALLBACK,
+    'page callback' => 'sync_db_synchronize_connection_progress',
+    'page arguments' => array(3),
+    'access arguments' => array('administer sync db module'),
+    'file' => 'sync_db.admin.inc'
+  );
+      
+  return $items;
+}
+
+/**
+ * Loads and returns a connection object if exists
+ * 
+ * @param int|string $cid The connection identification, either the name or the id
+ * @return \ConnectionInfo
+ */
+function sync_db_connection_load($cid) {
+  if (is_numeric($cid)) {
+    return ConnectionInfo::getConnectionInfoById($cid);
+  }
+  
+  $cid = str_replace('-', ' ', $cid);
+  return ConnectionInfo::getConnectionInfoByName($cid);
+}
+
+/**
+ * Verify if connection actually exists, and view connection page 
+ * @see sync_db_view_connection
+ * 
+ * @param ConnectionInfo $con
+ * @param string $action Function that is called if the $conobj is valid
+ */
+function sync_db_view_connection_page($con, $action = '') {
+  if ($con instanceof ConnectionInfo) {
+    $meth = 'sync_db_view_connection';
+    if (strlen($action) > 0) {
+      $meth .= "_$action";
+    }
+    
+    return $meth($con);
+  }
+  
+  return MENU_NOT_FOUND;
+}
+
+/**
+ * View connection's basic information
+ * 
+ * @param ConnectionInfo $con
+ */
+function sync_db_view_connection($con) {
+  $page = array();
+  
+  $page['name'] = array(
+    '#type' => 'item',
+    '#title' => t('Connection name'),
+    '#markup' => $con->getName(),
+  );
+  
+  $page['db'] = array(
+    '#type' => 'item',
+    '#title' => t('Database name'),
+    '#markup' => $con->getDatabase(),
+  );
+  
+  $page['host'] = array(
+    '#type' => 'item',
+    '#title' => t('Host'),
+    '#markup' => $con->getHost(),
+  );
+  
+  $page['user'] = array(
+    '#type' => 'item',
+    '#title' => t('Username'),
+    '#markup' => $con->getUsername(),
+  );
+  
+  $none_pass = t('None');
+  $page['pass'] = array(
+    '#type' => 'item',
+    '#title' => t('Password'),
+    '#markup' => $con->getPassword() ? $con->getPassword(): '<span style="font-style: italic">' . $none_pass . '</span>',
+  );
+  
+  $page['driver'] = array(
+    '#type' => 'item',
+    '#title' => t('Driver'),
+    '#markup' => $con->getDriver(),
+  );
+  
+  if ($con->getDescription()) {
+    $page['description'] = array(
+      '#type' => 'item',
+      '#title' => t('Description'),
+      '#markup' => $con->getDescription()
+    );
+  }
+  
+  $page['last_sync'] = array(
+    '#type' => 'item',
+    '#title' => t('Last sync'),
+    '#markup' => $con->getLastSync() == 0 ? t('Never') : format_date($con->getLastSync()),
+  );
+  $page['last_sync']['#markup'] .= ' - ' . l(t('Sync now'), sync_db_connection_path($con, 'sync'));
+  
+  $page['test_link'] = array(
+    '#type' => 'link',
+    '#title' => t('Test connection'),
+    '#suffix' => '<div id="test-callback"></div>',
+    '#href' => sync_db_connection_path($con, 'test/nojs'),
+    '#ajax' => array(
+      'wrapper' => 'test-callback',
+      'method' => 'html',
+    ),
+  );
+   
+  return $page;
+}
+
+/**
+ * View connection's tables information
+ * 
+ * @param ConnectionInfo $con
+ */
+function sync_db_view_connection_tables($con) {
+  $page = array();
+  
+  $page['intro'] = array(
+    '#markup' => t('The selected tables for sync by the current connection')
+  );
+  
+  $header = array(
+    'name' => t('Table'),     
+    'localname' => t('Local name'),
+    'condition' => t('Condition'),
+    'records' => t('Records'),
+    'lastsync' => t('Last sync'),
+    'rate' => t('Integrity')
+  );
+  
+  $records = $con->getTablesRowCount();
+  $rows = array();
+  $conname = $con->getName();
+  foreach($con->getTables() as $tab) {    
+    $lastsync = ($tab['last_sync'] == 0) ? 
+        l('Never', sync_db_connection_path($con, 'sync')) : format_date($tab['last_sync']);
+    $integ = ($tab['last_sync_success_rate'] == '') ? '-' : $tab['last_sync_success_rate'].'%';
+    $record_count = $records[$tab['real_name']] > -1 ? $records[$tab['real_name']] : l(t('Not exists'), sync_db_connection_path($con, 'repair'));
+        
+    $rows[] = array(
+      $tab['real_name'],
+      $tab['local_name'],
+      $tab['condition'],
+      $record_count,
+      $lastsync,
+      $integ);
+  }
+  
+  $page['tables'] = array(
+    '#theme' => 'table',
+    '#header' => $header,
+    '#rows' => $rows
+  );  
+  
+  return $page;
+}
+
+/**
+ * Returns the connection name title
+ * @param ConnectionInfo $con
+ */
+function sync_db_view_connection_title($con) {
+  if ($con instanceof ConnectionInfo) {
+    return ucwords($con->getName());
+  }
+  
+  return 'Undefined';
+}
+
+/**
+ * If the connection object exists tests a connection and return its response
+ * 
+ * @param ConnectionInfo $con The connection object to test the connection
+ * @param string $type either ajax or nojs
+ */
+function sync_db_test_connection_page($con, $type = 'ajax') {
+  if ($con instanceof ConnectionInfo) {
+    $begin = microtime(true);
+    
+    $except = '';
+    $result = ConnectionTester::tryConnectionByObject($con, $except, TRUE);
+    if ($result) {
+      $elapsed = microtime(true) - $begin;
+      $output = t('The connection test was successful. It took !time seconds to perfom the test.', array('!time' => number_format($elapsed, 2)));
+    }
+    else {
+      $output = t('An error ocurred: !error', array('!error' => $except->getMessage()));
+    }
+    
+    if ($type == 'ajax') {
+      $commands = array();      
+      $commands[] = ajax_command_html('#test-callback', $output);
+      $page = array('#type' => 'ajax', '#commands' => $commands);
+      return ajax_deliver($page);      
+    }
+    else {
+      return $output;
+    }
+  }
+  
+  return MENU_NOT_FOUND;
+}
+
+/**
+ * Tests a connection and returns the connection test 
+ * 
+ * @param string $database The database name
+ * @param string $host The database's host
+ * @param string $username The username for the login attempt
+ * @param string $password The password for the login attempt
+ * @param string $driver The database driver (e.g. mysql, postgree)
+ * 
+ * @return Whether the connection was successful or not
+ */
+function sync_db_test_connection($database, $host, $username, $password, $driver) {
+  if (!array_key_exists($driver, sync_db_available_drivers())) {
+    drupal_set_message(t("!driver isn't available yet.", array('!driver' => $driver)), 'error');  
+    return FALSE;
+  }
+  
+  return
+    ConnectionTester::tryConnection($database, $host, $username, $password, $driver);
+}
+
+/**
+ * Returns true if any connection with the specified name exists, otherwise false
+ * 
+ * @param string $name The connection name to check for
+ */
+function sync_db_connection_exists($name) {
+  if (ConnectionInfo::getConnectionIDByName($name)) {
+    return TRUE;
+  }
+  
+  return FALSE;
+}
+
+/**
+ * Returns an array with the supported database drivers by Sync DB module
+ */
+function sync_db_available_drivers() {
+  return array(
+    'mysql' => 'mysql',
+    'postgre' => 'postgre'
+  );
+}
+
+/**
+ * Gets the link of a section of that connection
+ * 
+ * @param ConnectionInfo|int|String $id An identifier for the connection
+ * @param string $type (Optional) Which page you wish (e.g. tables, sync, view, repair)
+ */
+function sync_db_connection_path ($id, $type = 'view') {
+  if ($id instanceof ConnectionInfo) {
+    $id = $id->getName();
+  }
+  
+  if (is_string($id)) {
+    $id = str_replace(' ', '-', $id);
+  }
+  
+  switch ($type) {
+    case 'sync':
+      return "sync-db/synchronization/$id/";
+      
+    default:
+      if ($type == 'table')
+        $type = 'view/table';
+      return "sync-db/connection-setup/$id/$type";
+  }
+}

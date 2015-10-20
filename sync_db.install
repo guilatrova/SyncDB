@@ -1,0 +1,149 @@
+<?php
+
+/**
+ * Implements hook_schema
+ */
+function sync_db_schema() {
+  
+  // <editor-fold defaultstate="collapsed" desc="Connection Table">
+    $schema['sync_db_connection'] = array(
+      'description' => 'The table for all third-party tables for sync_db module',
+      'fields' => array(
+        'cid' => array(
+          'type' => 'serial',
+          'not null' => TRUE,
+        ),
+        
+        'name' => array(
+          'type' => 'varchar',
+          'length' => '20',
+          'not null' => TRUE,
+        ),
+        
+        'database' => array(
+          'type' => 'varchar',
+          'length' => '50',
+          'not null' => TRUE,
+        ),
+        
+        'host' => array(
+          'type' => 'varchar',
+          'length' => '45',
+          'not null' => TRUE,
+        ),
+        
+        'username' => array(
+          'type' => 'varchar',
+          'length' => '45',
+          'default' => '',
+        ),
+        
+        'password' => array(
+          'type' => 'varchar',
+          'length' => '45',
+          'default' => '',
+        ),
+        
+        'driver' => array(
+          'type' => 'varchar',
+          'length' => '20',
+          'not null' => TRUE,
+          'default' => 'mysql',
+        ),
+        
+        'last_sync' => array(
+          'description' => 'The Unix timestamp of the last time that the database was synchronized',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ),
+        
+        'description' => array(
+          'type' => 'varchar',
+          'length' => '500',
+        )
+      ),
+      
+      'primary key' => array('cid'),
+    );
+  // </editor-fold>
+    
+  // <editor-fold defaultstate="collapsed" desc="Tables' table">
+  $schema['sync_db_table'] = array(
+    'description' => 'The table for the chosen tables entries to sync by sync db module',
+    'fields' => array(
+      'tid' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      
+      'real_name' => array(
+        'type' => 'varchar',
+        'length' => '50',
+        'not null' => TRUE,
+      ),
+      
+      'local_name' => array(
+        'type' => 'varchar',
+        'length' => '50',
+        'not null' => TRUE,
+      ),
+      
+      'condition' => array(
+        'description' => 'The condition for the where clause to update the current table',
+        'type' => 'varchar',
+        'length' => '45',
+      ),
+      
+      'last_sync' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      
+      'last_sync_success_rate' => array(
+        'type' => 'int',
+        'size' => 'tiny'
+      ),
+      
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+    ),
+    
+    'primary key' => array('tid'),
+    
+    'foreign keys' => array(
+			'from_connection' => array(
+				'table' => 'sync_db_connection',
+				'columns' => array('cid' => 'cid')
+			)
+		),
+    
+    'indexes' => array(
+      'sync_database' => array('cid'),
+    ),
+  );
+  //</editor-fold>
+  
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall
+ * 
+ * Delete all associate tables and its data
+ */
+function sync_db_uninstall() {
+  $tables = db_select('sync_db_table', 'tab')
+      ->fields('tab', array('local_name'))
+      ->execute()
+      ->fetchAll();
+  
+  foreach ($tables as $tab) {
+    if (db_table_exists($tab->local_name)) {
+      db_drop_table($tab->local_name);
+    }
+  }
+}

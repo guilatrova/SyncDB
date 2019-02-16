@@ -589,3 +589,327 @@ class Synchronization {
     }
   }
 }
+
+class ScheduledSync {
+  /**
+   * The tolerance time in minutes to sync
+   */
+  const TOLERANCE = 30;
+  
+  /**
+  * @var int 
+  */
+  private $id;
+  
+  /**
+   * @var int
+   */
+  private $cid;
+  
+  /**
+   * @var Array 
+   */
+  private $tables;
+  
+  /**
+   * @var Array 
+   */
+  private $unsaved_tables;
+  
+  /**
+   * @var String
+   */
+  private $description;
+  
+  /**
+   * Crontab format (➡TO. 026)
+   *# +---------------- minute (0 - 59)
+   *# |  +------------- hour (0 - 23)
+   *# |  |  +---------- day of month (1 - 31)
+   *# |  |  |  +------- month (1 - 12)
+   *# |  |  |  |  +---- day of week (0 - 6) (Sunday=0)
+   *# |  |  |  |  |
+   *# *  *  *  *  *  command to be executed
+   * @var String
+   * @see https://www.drupal.org/node/23714
+   */
+  private $frequency;
+
+  /**
+   * Unix timestamp
+   * @var int 
+   */
+  private $next_sync;
+  
+  /**   
+   * @var ConnectionInfo 
+   */
+  protected $connection;
+  
+  /**
+   * @var String
+   */
+  protected $options;
+  
+  /**
+   * Creates the schedule for the connection
+   * @param ConnectionInfo $con
+   * @return \ScheduledSync
+   */
+  static function createSchedule(ConnectionInfo $con) {
+    $ss = new ScheduledSync();
+    $ss->connection = $con;
+    $ss->cid = $con->getId();
+    
+    return $ss;
+  }
+  
+  private function __construct()
+  {
+    $ss->description = "";
+    $ss->frequency = "4 0 * * 0";
+    $ss->id = 0;
+    $ss->next_sync = -1;   
+  }
+  
+  // <editor-fold defaultstate="collapsed" desc="Get Methods">
+  /**
+   * Gets the ID
+   * @return int
+   */
+  function getId() {
+    return $this->id;
+  }
+
+  /**
+   * Gets the description
+   * @return String
+   */
+  function getDescription() {
+    return $this->description;
+  }
+
+  /**
+   * Gets the next sync scheduled
+   * @param boolean $unix_timestamp Wheather use Unixtimestamp format
+   * @return String|int The next sync
+   */
+  function getNextSync($unix_timestamp = FALSE) {
+    if ($unix_timestamp)      
+      return $this->next_sync;
+    return date('Y-m-d h:i:s',$this->next_sync);
+  }
+
+  /**
+   * Gets the connection which will be sync
+   * @return ConnectionInfo
+   */
+  function getConnectionInfo() {
+    if ($this->connection == NULL)
+      $this->connection = ConnectionInfo::getConnectionInfoById($this->cid);
+    return $this->connection;
+  }
+
+  /**
+   * Gets the options set
+   * @return Array The options
+   */
+  function getOptions() {
+    $exp = explode(';',$this->options);
+    
+    $ret['verify'] = $exp[0];
+    $ret['type'] = $exp[1];
+    
+    return $ret;
+  }
+  
+  /**
+   * Gets the sync frequency 
+   * @return String
+   */
+  function getSchedule($crontab = FALSE) {
+    if ($crontab)
+      return $this->frequency;
+    
+    $strsc = '';
+    $sch = explode(' ', $this->frequency);
+    return $strsc;
+  }
+  
+  /**
+   * Gets the tables
+   * @return Array An array with all the tables to be sync
+   */
+  function getTables() {
+    return $this->tables;
+  }
+  // </editor-fold>
+
+  // <editor-fold defaultstate="collapsed" desc="Set Methods">
+  
+  /**
+   * Sets the schedule's description
+   * @param String $description The description to be set
+   */
+  function setDescription($description) {
+    $this->description = $description;
+  }
+
+  /**
+   * Sets the frequency for the connection to be sync
+   * @param int $frequency
+   */
+  function setSchedule($frequency) {
+    $this->frequency = $frequency;
+  }
+
+  /**
+   * Sets the Synchronization options 
+   * @param Array $options An array with the options (verify and type)
+   */
+  function setOptions($options) {
+    $stropt = (isset($options['verify'])) ?
+        $options['verify'] : '0';
+    
+    //➡TO. 025
+    $stropt .= ';';
+    $stropt .= (isset($options['type'])) ?
+        $options['type'] : SyncDatabase::CONDITIONAL_QUERY;
+    
+    $this->options = $stropt;
+  }
+  
+  /**
+   * Sets the tables to be sync
+   * @param array $tables The tables to be sync
+   */
+  function setTables(Array $tables) {
+    $this->unsaved_tables = $tables;
+  }
+  // </editor-fold>
+    
+  // <editor-fold defaultstate="collapsed" desc="Database">
+  /**
+   * Inserts or updates the current object in database
+   */
+  function save() {
+    $this->calcNextSync();
+    
+    if ($this->id > 0) { //Update
+      db_update('scheduled_sync', 'ss')
+          ->fields('ss', array(
+            'options' => $this->options,
+            'description' => $this->getDescription(),
+            'frequency' => $this->getSchedule(),
+            'next_sync' => $this->next_sync
+          ))
+          ->condition('ssid', $this->id)
+          ->execute();
+      
+      //Looking tables to stop syncing
+      foreach ($this->tables as $tabname => $tab) {
+        if (!isset($this->unsaved_tables[$tabname])) {//Do not sync this anymore
+          db_delete('scheduled_sync_tables', 'sst')
+              ->condition('ssid', $this->id)
+              ->condition('tid', $tab['tid'])
+              ->execute();
+        }
+      }
+      
+      //Looking for new tables to sync
+      foreach ($this->unsaved_tables as $tabname => $tab) {
+        if (!isset($this->tables[$tabname])) { //Sync this from now on
+          db_insert('scheduled_sync_tables', 'sst')
+              ->fields('sst', array(
+                'ssid' => $this->id,
+                'tid' => $tab['tid']
+              ))
+              ->execute();
+        }
+      }
+    }
+    else { //Insert
+      $id = db_insert('scheduled_sync', 'ss')
+          ->fields('ss', array(
+            'options' => $this->options,
+            'description' => $this->getDescription(),
+            'frequency' => $this->frequency,
+            'next_sync' => $this->next_sync
+          ))
+          ->execute();
+      
+      $this->id = $id;
+      foreach ($this->unsaved_tables as $tab) {
+        db_insert('scheduled_sync_tables', 'sst')
+            ->fields('sst', array(
+              'ssid' => $id,
+              'tid' => $tab['tid']
+            ))
+            ->execute();
+      }
+    }
+    
+    $this->tables = $this->unsaved_tables;
+  }
+  
+  /**
+   * Deletes from database
+   */
+  function delete() {    
+    if ($this->id > 0) {
+      db_delete('scheduled_sync_tables')
+        ->condition(array('ssid', $this->id))
+        ->execute();
+      
+      db_delete('scheduled_sync')
+        ->condition(array('ssid', $this->id))
+        ->execute();
+    }
+  }
+  
+  /**
+   * Gets all the scheduled syncs
+   * @param ConnectionInfo $connection (Optional) Only the schedules for that connection
+   * @return Array \ScheduledSync An array with all the scheduled syncs
+   */
+  static function getSchedules(ConnectionInfo $connection = NULL) {
+    $schs = array();
+    
+    $query = db_select('scheduled_sync', 'ss')
+        ->fields('ss');
+    
+    if ($connection != NULL) {
+      $query = $query
+          ->condition('cid', $connection->getId());
+    }
+    $rows = $query->execute();
+    
+    foreach ($rows as $row) {
+      $obj = new ScheduledSync();
+      $obj->cid = $row['cid'];
+      $obj->options = $row['options'];
+      $obj->description = $row['description'];
+      $obj->frequency = $row['frequency'];
+      $obj->next_sync = $row['next_sync'];
+      
+      $schs[] = $obj;
+    }
+    
+    return $schs;
+  }
+  // </editor-fold>
+  
+  /**
+   * Runs the synchronization if it is the right time
+   */
+  function run() {
+    
+  }
+  
+  /**
+   * Calculates the next sync time based on the scheduled one
+   */
+  private function calcNextSync() {
+    
+  }
+}

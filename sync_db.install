@@ -127,6 +127,183 @@ function sync_db_schema() {
   );
   //</editor-fold>
   
+  // <editor-fold defaultstate="collapsed" desc="Schedule">
+  $schema['scheduled_sync'] = array(
+    'description' => 'The table to schedule synchronization for sync db module',
+    'fields' => array(
+      'ssid' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      
+      'options' => array(
+        'type' => 'varchar',
+        'length' => '10',
+        'not null' => TRUE,
+      ),
+      
+      'description' => array(
+        'type' => 'varchar',
+        'length' => '200',        
+      ),
+      
+      'frequency' => array(
+        'description' => 'The crontab to perform syncs',
+        'type' => 'varchar',
+        'length' => '20',
+        'not null' => TRUE,
+      ),
+      
+      'next_sync' => array(
+        'description' => 'The unix timestamp to do the next sync',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    
+    'primary key' => array('ssid'),
+    
+    'foreign keys' => array(
+			'from_connection' => array(
+				'table' => 'sync_db_connection',
+				'columns' => array('cid' => 'cid')
+			)
+		),
+    
+    'indexes' => array(
+      'sync_database' => array('cid'),
+    ),
+  );
+  // </editor-fold>
+
+  // <editor-fold defaultstate="collapsed" desc="Schedule has Tables">
+  $schema['scheduled_sync_tables'] = array(
+    'description' => 'The table for the chosen tables entries to sync by sync db module',
+    'fields' => array(
+      'ssid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      
+      'tid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+    ),
+    
+    'primary key' => array('ssid', 'tid'),
+    
+    'foreign keys' => array(
+			'which_schedule' => array(
+				'table' => 'scheduled_sync',
+				'columns' => array('ssid' => 'ssid')
+			),
+      'which_table' => array(
+        'table' => 'sync_db_table',
+        'columns' => array('tid' => 'tid')
+      ),
+		),
+  );
+  // </editor-fold>
+
+  // <editor-fold defaultstate="collapsed" desc="Report">
+  $schema['sync_db_report'] = array(
+    'fields' => array(
+      'rid' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+      ),
+      
+      'cid' => array(
+        'type' => 'int',        
+        'not null' => TRUE,
+      ),
+      
+      'start' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      
+      'end' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+    ),
+    
+    'primary key' => array('rid'),
+    
+    'foreign keys' => array(
+			'from_connection' => array(
+				'table' => 'sync_db_connection',
+				'columns' => array('cid' => 'cid')
+			)
+		),
+    
+    'indexes' => array(
+      'sync_connection' => array('cid'),
+    ),
+  );
+  // </editor-fold>
+  
+  // <editor-fold defaultstate="collapsed" desc="Report has Tables">
+  $schema['sync_db_report_tables'] = array(
+    'fields' => array(
+      'rid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      
+      'tid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      
+      'records' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE
+      ),
+      
+      'updated' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE
+      ),
+      
+      'inserted' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE
+      ),
+      
+      'failed' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE
+      ),
+    ),
+    
+    'primary key' => array('rid', 'tid'),
+    
+    'foreign keys' => array(
+			'which_report' => array(
+				'table' => 'sync_db_report',
+				'columns' => array('rid' => 'rid')
+			),
+      'which_table' => array(
+        'table' => 'sync_db_table',
+        'columns' => array('tid' => 'tid')
+      ),
+		),
+  );
+  // </editor-fold>
+
   return $schema;
 }
 
